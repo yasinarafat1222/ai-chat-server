@@ -1,0 +1,21 @@
+{
+  "name": "ai-chat-automation-function",
+  "version": "1.0.0",
+  "description": "Gemini API backend for customer service automation.",
+  "main": "index.js",
+  "dependencies": {
+    "@google/genai": "^1.31.0",
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.22.1",
+    "firebase-admin": "^13.6.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
