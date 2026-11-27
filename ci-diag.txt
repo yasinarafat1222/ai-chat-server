@@ -1,4 +1,0 @@
-exe=release/AI-Chat-Server-Setup-1.0.0.exe
-size=127583779 bytes
-393cac963a4a4e9aeedf3551fee22cb5eda8da1a2eebfeedb62e032722410b75 *release/AI-Chat-Server-Setup-1.0.0.exe
-push=OK

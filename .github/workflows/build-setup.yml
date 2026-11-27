@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build JAZARI Windows Installer
 
 on:
   workflow_dispatch:
@@ -24,14 +24,33 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build installer (NSIS)
+      - name: Fetch JAZARI zip from Drive + build installer
         shell: bash
         run: |
           set -o pipefail
-          npx electron-builder --win nsis --x64 --publish never 2>&1 | tee build-log.txt
+          {
+            echo "=== download zip from Google Drive ==="
+            curl -L --retry 3 -o jazari.zip "https://drive.usercontent.google.com/download?id=1t8jfPrIjN94ltk1kvIFVjQmhnVw7UWRW&export=download&confirm=t"
+            ls -la jazari.zip
+            echo "=== first bytes (detect HTML error pages) ==="
+            head -c 120 jazari.zip | od -c | head -4
+            echo "=== zip integrity ==="
+            unzip -t jazari.zip | tail -2 || { echo "ZIP_INVALID"; exit 1; }
+            echo "=== prepare desktop-app ==="
+            rm -rf desktop-app
+            mkdir desktop-app
+            cp installer/package.json installer/main.js desktop-app/
+            cp assets/jazari-icon.png desktop-app/icon.png
+            unzip -q jazari.zip -d desktop-app/ui
+            echo "=== ui structure (top) ==="
+            (cd desktop-app/ui && find . -maxdepth 2 | head -80)
+            echo "=== npm install (electron shell) ==="
+            (cd desktop-app && npm install --no-audit --no-fund)
+            echo "=== electron-builder ==="
+            (cd desktop-app && npx electron-builder --win nsis --x64 --publish never)
+            echo "=== release dir ==="
+            ls -la desktop-app/release
+          } 2>&1 | tee build-log.txt
 
       - name: Commit installer chunks + diagnostics
         if: success()
@@ -43,19 +62,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          EXE=$(ls release/*.exe | grep -v uninstaller | head -1)
+          EXE=$(ls desktop-app/release/*.exe | grep -v __uninstaller | head -1)
           SIZE=$(stat -c %s "$EXE")
           {
             echo "exe=$EXE"
             echo "size=$SIZE bytes"
             sha256sum "$EXE"
-          } | tee ci-diag.txt
+          } > ci-diag.txt
 
           rm -rf chunks && mkdir chunks
           split -b 48M -d "$EXE" chunks/installer.part-
 
-          git add -f chunks/
-          git commit -m "CI: installer chunks [skip ci]" || echo "nothing to commit"
+          git add -A -f chunks/
+          git commit -m "CI: JAZARI installer chunks [skip ci]" || echo "nothing to commit"
 
           if git push origin HEAD:${{ github.ref_name }}; then
             echo "push=OK" >> ci-diag.txt
@@ -66,9 +85,9 @@ jobs:
           SHA=$(gh api "repos/${{ github.repository }}/contents/ci-diag.txt?ref=${{ github.ref_name }}" --jq .sha 2>/dev/null || true)
           B64=$(base64 -w0 ci-diag.txt)
           if [ -n "$SHA" ]; then
-            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" || true
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" > /dev/null || true
           else
-            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" || true
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" > /dev/null || true
           fi
 
       - name: Diagnostics on failure
@@ -77,12 +96,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          { tail -60 build-log.txt 2>/dev/null || true; } > ci-diag.txt
-          echo "job failed at step level" >> ci-diag.txt
+          { tail -80 build-log.txt 2>/dev/null || echo "no build log"; } > ci-diag.txt
           SHA=$(gh api "repos/${{ github.repository }}/contents/ci-diag.txt?ref=${{ github.ref_name }}" --jq .sha 2>/dev/null || true)
           B64=$(base64 -w0 ci-diag.txt)
           if [ -n "$SHA" ]; then
-            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" || true
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" > /dev/null || true
           else
-            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" || true
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" > /dev/null || true
           fi
