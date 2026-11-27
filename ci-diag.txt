@@ -1,0 +1,4 @@
+exe=desktop-app/release/JAZARI-Bridge-UI-Setup-0.14.178.exe
+size=160450178 bytes
+03aad8e04b07bb86707ff45fa4f3a9713ab54a33a502b3dcedea245ccdaf609d *desktop-app/release/JAZARI-Bridge-UI-Setup-0.14.178.exe
+push=OK
