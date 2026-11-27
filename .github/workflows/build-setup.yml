@@ -28,13 +28,27 @@ jobs:
         run: npm install
 
       - name: Build setup.exe (NSIS installer)
-        run: npx electron-builder --win nsis --x64
+        shell: bash
+        run: |
+          set -o pipefail
+          npx electron-builder --win nsis --x64 2>&1 | tee build-log.txt
 
       - name: Commit installer to this branch
+        if: success()
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f release/setup.exe
           git commit -m "CI: build setup.exe installer [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Commit build log on failure
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f build-log.txt
+          git commit -m "CI: electron-builder failed - build log [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
