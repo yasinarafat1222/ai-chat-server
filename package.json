@@ -53,7 +53,7 @@
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "AI Chat Server",
-      "artifactName": "setup.exe"
+      "artifactName": "AI-Chat-Server-Setup-${version}.${ext}"
     }
   }
 }
