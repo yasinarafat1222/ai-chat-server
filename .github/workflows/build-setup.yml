@@ -1,0 +1,37 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-setup
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build setup.exe (NSIS installer)
+        run: npx electron-builder --win nsis --x64
+
+      - name: Commit installer to this branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f release/setup.exe
+          git commit -m "CI: build setup.exe installer [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}

@@ -1,8 +1,16 @@
 {
   "name": "ai-chat-automation-function",
   "version": "1.0.0",
-  "description": "Gemini API backend for customer service automation.",
-  "main": "index.js",
+  "description": "Gemini API backend + Electron desktop app for customer service automation.",
+  "main": "electron/main.js",
+  "author": "Yasin Arafat",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "electron .",
+    "dist": "electron-builder --win nsis --x64"
+  },
   "dependencies": {
     "@google/genai": "^1.31.0",
     "@google/generative-ai": "^0.24.1",
@@ -11,11 +19,41 @@
     "express": "^4.22.1",
     "firebase-admin": "^13.6.0"
   },
-  "scripts": {
-    "start": "node index.js"
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "build": {
+    "appId": "com.yasinarafat.aiChatServer",
+    "productName": "AI Chat Server",
+    "copyright": "Copyright © 2026 Yasin Arafat",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "server.js",
+      "electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Chat Server",
+      "artifactName": "setup.exe"
+    }
+  }
 }
