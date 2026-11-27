@@ -27,28 +27,62 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build setup.exe (NSIS installer)
+      - name: Build installer (NSIS)
         shell: bash
         run: |
           set -o pipefail
           npx electron-builder --win nsis --x64 --publish never 2>&1 | tee build-log.txt
 
-      - name: Commit installer to this branch
+      - name: Commit installer chunks + diagnostics
         if: success()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f release/AI-Chat-Server-Setup-*.exe
-          git commit -m "CI: build setup.exe installer [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
 
-      - name: Commit build log on failure
+          EXE=$(ls release/*.exe | grep -v uninstaller | head -1)
+          SIZE=$(stat -c %s "$EXE")
+          {
+            echo "exe=$EXE"
+            echo "size=$SIZE bytes"
+            sha256sum "$EXE"
+          } | tee ci-diag.txt
+
+          rm -rf chunks && mkdir chunks
+          split -b 48M -d "$EXE" chunks/installer.part-
+
+          git add -f chunks/
+          git commit -m "CI: installer chunks [skip ci]" || echo "nothing to commit"
+
+          if git push origin HEAD:${{ github.ref_name }}; then
+            echo "push=OK" >> ci-diag.txt
+          else
+            echo "push=FAILED" >> ci-diag.txt
+          fi
+
+          SHA=$(gh api "repos/${{ github.repository }}/contents/ci-diag.txt?ref=${{ github.ref_name }}" --jq .sha 2>/dev/null || true)
+          B64=$(base64 -w0 ci-diag.txt)
+          if [ -n "$SHA" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" || true
+          else
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" || true
+          fi
+
+      - name: Diagnostics on failure
         if: failure()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f build-log.txt
-          git commit -m "CI: electron-builder failed - build log [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+          { tail -60 build-log.txt 2>/dev/null || true; } > ci-diag.txt
+          echo "job failed at step level" >> ci-diag.txt
+          SHA=$(gh api "repos/${{ github.repository }}/contents/ci-diag.txt?ref=${{ github.ref_name }}" --jq .sha 2>/dev/null || true)
+          B64=$(base64 -w0 ci-diag.txt)
+          if [ -n "$SHA" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" || true
+          else
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="CI diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" || true
+          fi
