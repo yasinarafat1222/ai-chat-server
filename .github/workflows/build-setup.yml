@@ -2,9 +2,6 @@ name: Build JAZARI Windows Installer
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'arena/**'
 
 concurrency:
   group: build-setup

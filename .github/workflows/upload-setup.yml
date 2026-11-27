@@ -1,0 +1,86 @@
+name: Upload setup.exe to Google Drive
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/**'
+
+concurrency:
+  group: upload-setup
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reassemble setup.exe and stream to Google Drive (resumable upload)
+        shell: bash
+        run: |
+          set -e
+          UPLOAD_URI="https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=True&upload_id=AFy3sg0atItMe0jYnFx06B2Bphugte_DTucvtUGUbOyaee_WEgrvMaiX8eT9pJy_xwitOYv67yLAhQ3dvMlSQ-8GcBrLzRSNt3ZMZ51ydvWZow&session_crd=AHSoBRU9WcqqVXT7oUya8kcQ4FiM4XYFlf4m4NfmW0ioujWTJgd6--oODAY44mHW8IkUPut1GaM51plUCW8&upload_protocol=resumable"
+          EXPECTED_SHA="03aad8e04b07bb86707ff45fa4f3a9713ab54a33a502b3dcedea245ccdaf609d"
+
+          cat chunks/installer.part-* > setup.exe
+          TOTAL=$(stat -c %s setup.exe)
+          echo "size=$TOTAL"
+          ACTUAL=$(sha256sum setup.exe | awk '{print $1}')
+          echo "sha256=$ACTUAL"
+          [ "$ACTUAL" = "$EXPECTED_SHA" ] || { echo "SHA MISMATCH - aborting upload"; exit 1; }
+
+          CHUNK=262144  # 256KiB - resumable protocol requirement
+          mkdir -p parts
+          split -b $CHUNK -d setup.exe parts/p-
+
+          OFFSET=0
+          for f in parts/p-*; do
+            SZ=$(stat -c %s "$f")
+            if [ $((OFFSET + SZ)) -ge "$TOTAL" ]; then CMD="upload/finalize"; else CMD="upload"; fi
+            echo "PUT offset=$OFFSET size=$SZ cmd=$CMD"
+            if [ "$CMD" = "upload/finalize" ]; then
+              curl -sS -D /tmp/h.txt -X PUT "$UPLOAD_URI" \
+                -H "X-Goog-Upload-Offset: $OFFSET" \
+                -H "X-Goog-Upload-Command: $CMD" \
+                -H "X-Goog-Upload-Total-Size: $TOTAL" \
+                --data-binary "@$f" -o /tmp/body.json
+              STATUS=$(grep -i "^x-goog-upload-status" /tmp/h.txt | tr -d '\r' | awk '{print $2}')
+              echo "status=$STATUS"
+              echo "--- final response body ---"
+              cat /tmp/body.json
+              echo
+              cp /tmp/body.json upload-result.json
+            else
+              STATUS=$(curl -sS -D - -o /dev/null -X PUT "$UPLOAD_URI" \
+                -H "X-Goog-Upload-Offset: $OFFSET" \
+                -H "X-Goog-Upload-Command: $CMD" \
+                -H "X-Goog-Upload-Total-Size: $TOTAL" \
+                --data-binary "@$f" \
+                | grep -i "^x-goog-upload-status" | tr -d '\r' | awk '{print $2}')
+            fi
+            OFFSET=$((OFFSET + SZ))
+            if [ "$STATUS" = "final" ]; then echo "UPLOAD_FINALIZED"; break; fi
+            if [ "$STATUS" != "active" ]; then echo "UNEXPECTED_STATUS=$STATUS - aborting"; exit 1; fi
+          done
+
+          echo "bytes_sent=$OFFSET / $TOTAL"
+          [ "$OFFSET" = "$TOTAL" ] || { echo "OFFSET MISMATCH"; exit 1; }
+
+      - name: Write upload result to branch
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          { echo "upload=OK"; cat upload-result.json 2>/dev/null || true; } > ci-diag.txt
+          SHA=$(gh api "repos/${{ github.repository }}/contents/ci-diag.txt?ref=${{ github.ref_name }}" --jq .sha 2>/dev/null || true)
+          B64=$(base64 -w0 ci-diag.txt)
+          if [ -n "$SHA" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="Upload diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" -f sha="$SHA" > /dev/null || true
+          else
+            gh api -X PUT "repos/${{ github.repository }}/contents/ci-diag.txt" -f message="Upload diagnostics [skip ci]" -f content="$B64" -f branch="${{ github.ref_name }}" > /dev/null || true
+          fi
